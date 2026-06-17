@@ -46,7 +46,7 @@ st.markdown("""
 DB_PATH = "data.db"
 TABLE_NAME = "数譜データ分析用"
 
-@st.cache_data
+@st.cache_data(ttl=600)
 def get_database_info():
     """Retrieve metadata about the SQLite database."""
     if not os.path.exists(DB_PATH):
@@ -72,7 +72,7 @@ def load_table_data(table_name):
     conn.close()
     return df
 
-@st.cache_data
+@st.cache_data(ttl=600)
 def get_player_ranking():
     """Generate player ranking based on tournament participation, match count and logs count."""
     if not os.path.exists(DB_PATH):
@@ -98,7 +98,7 @@ def get_player_ranking():
     df_ranking.insert(0, '順位', range(1, len(df_ranking) + 1))
     return df_ranking
 
-@st.cache_data
+@st.cache_data(ttl=600)
 def get_player_history(player_name):
     """Fetch all records for a specific player."""
     conn = sqlite3.connect(DB_PATH)
