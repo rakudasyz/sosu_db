@@ -107,12 +107,6 @@ else:
         # Options
         st.sidebar.subheader("⚙️ 表示オプション")
         
-        use_first_row_as_header = st.sidebar.checkbox(
-            "1行目を列名（ヘッダー）として使用する",
-            value=True,
-            help="データの1行目をテーブルのヘッダー名に設定し、2行目以降を表示データとします。"
-        )
-        
         limit_rows = st.sidebar.slider(
             "🔍 最大表示行数 (ローカルブラウザの負荷軽減用)",
             min_value=100,
@@ -123,30 +117,7 @@ else:
         
         # Load data (cached for performance)
         with st.spinner("データベースからデータを読み込んでいます..."):
-            raw_df = load_table_data(selected_table)
-            
-        total_rows = len(raw_df)
-        
-        # Process header if enabled
-        if use_first_row_as_header and total_rows > 0:
-            headers = raw_df.iloc[0].tolist()
-            # Handle empty/None or duplicate headers
-            unique_headers = []
-            for i, h in enumerate(headers):
-                if pd.isna(h) or str(h).strip() == "":
-                    unique_headers.append(f"Column_{i+1}")
-                else:
-                    h_str = str(h).strip()
-                    if h_str in unique_headers:
-                        unique_headers.append(f"{h_str}_{i+1}")
-                    else:
-                        unique_headers.append(h_str)
-            
-            df = raw_df.copy()
-            df.columns = unique_headers
-            df = df.iloc[1:].reset_index(drop=True)
-        else:
-            df = raw_df.copy()
+            df = load_table_data(selected_table)
             
         # Metrics Row
         col1, col2, col3 = st.columns(3)
