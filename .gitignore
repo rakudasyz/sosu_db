@@ -1,0 +1,18 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Streamlit config (optional)
+.streamlit/config.toml
+
+# IDE settings
+.vscode/
+.idea/
+.DS_Store
