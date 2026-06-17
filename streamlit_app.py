@@ -117,6 +117,237 @@ def get_player_history(player_name):
     conn.close()
     return df_history
 
+@st.cache_data(ttl=600)
+def get_all_player_titles():
+    """全プレーヤーにユニークな肩書きを付与する。"""
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql_query(f'SELECT * FROM "{TABLE_NAME}"', conn)
+    conn.close()
+
+    assigned = {}
+    used_titles = set()
+
+    def assign(player, title):
+        if player not in assigned and title not in used_titles:
+            assigned[player] = title
+            used_titles.add(title)
+            return True
+        return False
+
+    # 全プレーヤーリスト
+    all_players = sorted(df['プレーヤー'].dropna().unique())
+    all_players = [p for p in all_players if p != '']
+
+    # 年度一覧
+    years = sorted(df['年度'].dropna().unique())
+
+    # 1. 年度×大会 最多出場
+    for year in years:
+        for tournament in sorted(df['大会'].dropna().unique()):
+            subset = df[(df['年度'] == year) & (df['大会'] == tournament)]
+            if subset.empty:
+                continue
+            counts = subset.groupby('プレーヤー').size()
+            if len(counts) == 0:
+                continue
+            best = counts.idxmax()
+            assign(best, f"{year}年度 {tournament} 最多出場")
+
+    # 2. 年度×ルール 最多出場
+    for year in years:
+        for rule in sorted(df['ルール'].dropna().unique()):
+            subset = df[(df['年度'] == year) & (df['ルール'] == rule)]
+            if subset.empty:
+                continue
+            counts = subset.groupby('プレーヤー').size()
+            if len(counts) == 0:
+                continue
+            best = counts.idxmax()
+            assign(best, f"{year}年度 ルール{rule} 最多出場")
+
+    # 3. 大会別 最多出場
+    for tournament in sorted(df['大会'].dropna().unique()):
+        subset = df[df['大会'] == tournament]
+        if subset.empty:
+            continue
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) == 0:
+            continue
+        best = counts.idxmax()
+        assign(best, f"{tournament} 最多出場")
+
+    # 4. 年度別 最多出場
+    for year in years:
+        subset = df[df['年度'] == year]
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) == 0:
+            continue
+        best = counts.idxmax()
+        assign(best, f"{year}年度 最多出場")
+
+    # 5. ルール別 最多出場
+    for rule in sorted(df['ルール'].dropna().unique()):
+        subset = df[df['ルール'] == rule]
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) == 0:
+            continue
+        best = counts.idxmax()
+        assign(best, f"ルール{rule} 最多出場")
+
+    # 6. 人数別 最多出場
+    for ninzu in sorted(df['人数'].dropna().unique()):
+        subset = df[df['人数'] == ninzu]
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) == 0:
+            continue
+        best = counts.idxmax()
+        assign(best, f"{ninzu}人対戦 最多出場")
+
+    # 7. 回別 最多出場
+    for kai in sorted(df['回'].dropna().unique()):
+        subset = df[df['回'] == kai]
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) == 0:
+            continue
+        best = counts.idxmax()
+        assign(best, f"「{kai}」最多出場")
+
+    # 8. 期別 最多出場
+    for ki in sorted(df['期'].dropna().unique()):
+        subset = df[df['期'] == ki]
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) == 0:
+            continue
+        best = counts.idxmax()
+        assign(best, f"第{ki}期 最多出場")
+
+    # 9. GC,RR,IN 別 最多
+    for gcrrin in sorted(df['GC,RR,IN'].dropna().unique()):
+        subset = df[df['GC,RR,IN'] == gcrrin]
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) == 0:
+            continue
+        best = counts.idxmax()
+        assign(best, f"{gcrrin} 最多")
+
+    # 10. 手番1(先手) 最多
+    subset = df[df['手番'] == '1']
+    if not subset.empty:
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) > 0:
+            best = counts.idxmax()
+            assign(best, "先手 最多")
+
+    # 11. 手番2(後手) 最多
+    subset = df[df['手番'] == '2']
+    if not subset.empty:
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) > 0:
+            best = counts.idxmax()
+            assign(best, "後手 最多")
+
+    # 12. ジョーカー使用 最多種類
+    joker_df = df[df['ジョーカー'].notna() & (df['ジョーカー'] != '')]
+    if not joker_df.empty:
+        joker_variety = joker_df.groupby('プレーヤー')['ジョーカー'].apply(lambda x: x.nunique())
+        if len(joker_variety) > 0:
+            best = joker_variety.idxmax()
+            assign(best, f"ジョーカー使い ({joker_variety[best]}種類)")
+
+    # 13. パス最少
+    pass_df = df[df['パス'].notna() & (df['パス'] != '')]
+    if not pass_df.empty:
+        pass_counts = pass_df.groupby('プレーヤー').size()
+        # 全プレーヤーのパス回数を出して最少を探す
+        all_pass = df.copy()
+        all_pass['has_pass'] = df['パス'].notna() & (df['パス'] != '')
+        all_pass_counts = all_pass.groupby('プレーヤー')['has_pass'].sum()
+        if len(all_pass_counts) > 0:
+            best = all_pass_counts.idxmin()
+            assign(best, "最もパスが少ない")
+
+    # 14. 合計手数 最多
+    te_count = df.groupby('プレーヤー')['手数'].apply(lambda x: x.astype(int).max() if len(x) > 0 else 0)
+    if len(te_count) > 0:
+        best = te_count.idxmax()
+        assign(best, f"合計手数 最多 ({int(te_count[best])}手)")
+
+    # 15. 枚数クラス別 最多
+    for mc in sorted(df['枚数クラス'].dropna().unique()):
+        subset = df[df['枚数クラス'] == mc]
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) == 0:
+            continue
+        best = counts.idxmax()
+        assign(best, f"枚数クラス{mc} 最多")
+
+    # 16. 年度×人数 最多出場
+    for year in years:
+        for ninzu in sorted(df['人数'].dropna().unique()):
+            subset = df[(df['年度'] == year) & (df['人数'] == ninzu)]
+            if subset.empty:
+                continue
+            counts = subset.groupby('プレーヤー').size()
+            if len(counts) == 0:
+                continue
+            best = counts.idxmax()
+            assign(best, f"{year}年度 {ninzu}人対戦 最多出場")
+
+    # 17. 本別 最多出場
+    for hon in sorted(df['本'].dropna().unique()):
+        subset = df[df['本'] == hon]
+        counts = subset.groupby('プレーヤー').size()
+        if len(counts) == 0:
+            continue
+        best = counts.idxmax()
+        assign(best, f"本{hon} 最多")
+
+    # 18. 勝者 最多
+    winner_df = df[df['勝者'].notna() & (df['勝者'] != '')]
+    if not winner_df.empty:
+        # 勝者カラムにはプレーヤー番号(1,2,3,4)が入っている
+        # 勝者=1のときは 1列目のプレーヤーが勝者
+        for w in sorted(winner_df['勝者'].unique()):
+            w_subset = winner_df[winner_df['勝者'] == w]
+            # 勝者列に対応するプレーヤー列を特定
+            player_col = str(w) if w != '0' else '1'
+            if player_col in df.columns:
+                counts = w_subset[player_col].value_counts()
+                if len(counts) > 0:
+                    best = counts.idxmax()
+                    assign(best, f"最多勝利 (勝者{w})")
+
+    # 19. 残りのプレーヤーに汎用肩書きを付与
+    for player in all_players:
+        if player in assigned:
+            continue
+        player_df = df[df['プレーヤー'] == player]
+        if player_df.empty:
+            continue
+        # そのプレーヤーの特徴的な大会を探す
+        top_tournament = player_df['大会'].value_counts().index[0] if len(player_df['大会'].value_counts()) > 0 else None
+        top_year = player_df['年度'].value_counts().index[0] if len(player_df['年度'].value_counts()) > 0 else None
+        distinct_tournaments = player_df['大会ID'].nunique()
+
+        if top_year and top_tournament:
+            title = f"{top_year}年度 {top_tournament} 出場"
+        elif top_tournament:
+            title = f"{top_tournament} 出場"
+        else:
+            title = f"{distinct_tournaments}大会出場"
+
+        if title not in used_titles:
+            assign(player, title)
+        else:
+            # ユニークになるよう調整
+            for i in range(2, 100):
+                alt = f"{title} (その{i})"
+                if alt not in used_titles:
+                    assign(player, alt)
+                    break
+
+    return assigned
+
 # Header Section
 st.title("📊 数譜データベース 閲覧・分析アプリ")
 st.markdown("SQLite データベース (`data.db`) の中身の可視化・検索、およびプレーヤー実績の分析が行えます。")
@@ -141,7 +372,7 @@ else:
     """, unsafe_allow_html=True)
 
     # Main Tabs
-    tab1, tab2 = st.tabs(["📋 データテーブル閲覧", "🏆 プレーヤーランキング"])
+    tab1, tab2, tab3 = st.tabs(["📋 データテーブル閲覧", "🏆 プレーヤーランキング", "👑 肩書き"])
 
     # --- TAB 1: DATA BROWSER ---
     with tab1:
@@ -298,3 +529,118 @@ else:
                     use_container_width=True,
                     hide_index=True
                 )
+
+    # --- TAB 3: PLAYER TITLES ---
+    with tab3:
+        st.subheader("👑 あなただけの肩書き")
+        st.markdown("データベース上の全61名のプレーヤーに、それぞれ**ユニークな「1位」の肩書き**を付与しました。勝敗に関わらず、誰もが何らかの日本一になれます！")
+
+        # 肩書き用のCSS
+        st.markdown("""
+        <style>
+        .title-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            padding: 40px 30px;
+            text-align: center;
+            color: white;
+            margin: 20px 0;
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+        }
+        .title-card .player-name {
+            font-size: 2.2em;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            margin-bottom: 10px;
+        }
+        .title-card .title-label {
+            font-size: 0.85em;
+            letter-spacing: 0.2em;
+            opacity: 0.8;
+            margin-bottom: 15px;
+        }
+        .title-card .title-text {
+            font-size: 1.6em;
+            font-weight: 700;
+            background: rgba(255,255,255,0.15);
+            border-radius: 50px;
+            padding: 15px 30px;
+            display: inline-block;
+            margin: 10px 0;
+        }
+        .title-card .crown {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+        .title-card .detail-text {
+            font-size: 0.9em;
+            opacity: 0.7;
+            margin-top: 15px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Load titles
+        with st.spinner("肩書きを生成中..."):
+            titles = get_all_player_titles()
+
+        if not titles:
+            st.warning("肩書きデータを生成できませんでした。")
+        else:
+            # Player selector
+            player_list = sorted(titles.keys())
+            selected_player = st.selectbox(
+                "👤 プレーヤーを選択してください",
+                options=player_list,
+                key="tab3-player-select"
+            )
+
+            if selected_player:
+                player_title = titles.get(selected_player, "肩書きなし")
+
+                # Display the title card
+                st.markdown(f"""
+                <div class="title-card">
+                    <div class="crown">👑</div>
+                    <div class="player-name">{selected_player}</div>
+                    <div class="title-label">〜 あなたの肩書き 〜</div>
+                    <div class="title-text">{player_title}</div>
+                    <div class="detail-text">この肩書きはデータベース上の全プレーヤーの中で唯一無二です</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Show some stats for context
+                ranking_df = get_player_ranking()
+                player_info = ranking_df[ranking_df["プレーヤー名"] == selected_player]
+                if not player_info.empty:
+                    info = player_info.iloc[0]
+                    st.markdown("---")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("大会参加数", f"{info['大会参加数']} 大会")
+                    with col2:
+                        st.metric("総対局数", f"{info['対局数']} 局")
+                    with col3:
+                        st.metric("総手数", f"{info['総手数']} 手")
+
+            # 全肩書き一覧
+            st.markdown("---")
+            st.subheader("📋 全プレーヤー肩書き一覧")
+            titles_df = pd.DataFrame(
+                [{"プレーヤー名": p, "肩書き": t} for p, t in sorted(titles.items())]
+            )
+            st.dataframe(
+                titles_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # Download
+            csv_titles = titles_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="全肩書きデータをCSVとしてダウンロード",
+                data=csv_titles,
+                file_name="player_titles.csv",
+                mime="text/csv",
+                key="tab3-download-csv"
+            )
