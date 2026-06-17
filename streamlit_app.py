@@ -245,8 +245,8 @@ else:
             st.write(f"📈 大会参加数ランキング (Top {top_n})")
             
             # Format dataframe for charting
-            chart_df = top_ranking.set_index("プレーヤー名")[["大会参加数", "対局数"]]
-            st.bar_chart(chart_df, y=["大会参加数", "対局数"], color=["#1E3A8A", "#3B82F6"])
+            chart_df = top_ranking.set_index("プレーヤー名")[["大会参加数"]]
+            st.bar_chart(chart_df, y="大会参加数", color="#1E3A8A")
             
             # Display ranking table
             st.subheader("📋 ランキング詳細")
